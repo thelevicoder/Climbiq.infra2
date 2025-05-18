@@ -3,6 +3,9 @@ FROM public.ecr.aws/lambda/python:3.9
 
 # 2. Install OpenCV and NumPy into /opt/python
 RUN pip install --no-cache-dir opencv-python-headless numpy -t /opt/python
+RUN pip install requests_toolbelt
+
+ 
 
 # 3. Copy all three handler scripts into the image
 #    (assumes your handlers live in ../lib/handlers/)
