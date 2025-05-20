@@ -6,8 +6,9 @@ import json
 import os
 import tempfile
 
-LAB_TOLERANCE = 30
-HSV_TOLERANCE = (20, 60, 60)
+LAB_TOLERANCE = 45     # try 40-60
+HSV_TOLERANCE = (35, 90, 90)  # try (30-40, 90-110, 90-110)
+
 MORPH_KERNEL = np.ones((7, 7), np.uint8)
 
 def filter_outliers(region):

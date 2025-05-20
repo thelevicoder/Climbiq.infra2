@@ -13,9 +13,16 @@ DEFAULT_WALL_ANGLE = int(os.getenv('DEFAULT_WALL_ANGLE', 20))
 MAX_STATIC_REACH  = 90
 MAX_DYNAMIC_REACH = 105
 V_GRADE_MAPPING = [
-    (0, 15,  "V0"), (15, 25, "V1"), (25, 35, "V2"), (35, 45, "V3"),
-    (45, 55, "V4"), (55, 65, "V5"), (65, 75, "V6"), (75, 85, "V7"),
-    (85, 95, "V8"), (95, float('inf'), "V9+")
+    (0, 10,  "V0"),
+    (10, 16, "V1"),
+    (16, 22, "V2"),
+    (22, 28, "V3"),
+    (28, 34, "V4"),
+    (34, 40, "V5"),
+    (40, 50, "V6"),
+    (50, 60, "V7"),
+    (60, 75, "V8"),
+    (75, float('inf'), "V9+")
 ]
 
 # AWS clients
@@ -111,6 +118,10 @@ def lambda_handler(event, context=None):
         if full_b64:
             img_bytes = base64.b64decode(full_b64)
             s3.put_object(Bucket=BUCKET, Key=img_key, Body=img_bytes, ContentType='image/jpeg')
+        print("avg_hold:", avg_hold)
+        print("hold_diff:", hold_diff)
+        print("move_diff:", move_diff)
+        print("total:", total)
 
         # 2) Write record to DynamoDB
         record = {
