@@ -13,7 +13,7 @@ export class ClimbIQStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    // Existing UserData table
+    // UserData table
     const tableName = 'UserData';
     const tableArn = `arn:aws:dynamodb:${this.region}:${this.account}:table/${tableName}`;
 
@@ -45,6 +45,17 @@ export class ClimbIQStack extends Stack {
       resources: [tableArn]
     }));
 
+    // Presigned S3 upload URL Lambda
+    const generateUploadUrlLambda = new awsLambda.Function(this, 'GenerateUploadUrlLambda', {
+      runtime: awsLambda.Runtime.NODEJS_18_X,
+      handler: 'generate_upload_url_lambda.lambdaHandler',
+      code: awsLambda.Code.fromAsset(path.join(__dirname, 'handlers')),
+      environment: {
+        IMAGE_BUCKET: historyBucket.bucketName,
+      },
+      timeout: Duration.seconds(10)
+    });
+
     // 🐳 Grading Lambdas (Docker images)
     const contourLambda = new DockerImageFunction(this, 'ContourLambda', {
       code: DockerImageCode.fromImageAsset(path.join(__dirname, '..', 'lambda-docker', 'contour')),
@@ -67,8 +78,24 @@ export class ClimbIQStack extends Stack {
     // Grant history write permissions to route lambda
     gradeRouteLambda.addEnvironment('IMAGE_BUCKET', historyBucket.bucketName);
     gradeRouteLambda.addEnvironment('HISTORY_TABLE', historyTable.tableName);
+    historyBucket.grantPut(generateUploadUrlLambda);
     historyBucket.grantPut(gradeRouteLambda);
     historyTable.grantWriteData(gradeRouteLambda);
+
+    // Lambda for grading by S3 key (process-image-lambda)
+    const processImageLambda = new awsLambda.Function(this, 'ProcessImageLambda', {
+      runtime: awsLambda.Runtime.NODEJS_18_X,
+      handler: 'process_image_lambda.lambdaHandler',
+      code: awsLambda.Code.fromAsset(path.join(__dirname, 'handlers')),
+      memorySize: 2048,
+      timeout: Duration.seconds(30),
+      environment: {
+        IMAGE_BUCKET: historyBucket.bucketName,
+        HISTORY_TABLE: historyTable.tableName,
+      },
+    });
+    historyBucket.grantRead(processImageLambda);
+    historyTable.grantReadData(processImageLambda);
 
     // 🌐 API Gateway
     const api = new apigateway.RestApi(this, 'ClimbIQApi', {
@@ -87,32 +114,35 @@ export class ClimbIQStack extends Stack {
 
     // 🧩 /grade/contour, /grade/hold, /grade/route
     const grade = api.root.addResource('grade');
-
     const contour = grade.addResource('contour');
     contour.addMethod('POST', new apigateway.LambdaIntegration(contourLambda));
-
     const hold = grade.addResource('hold');
     hold.addMethod('POST', new apigateway.LambdaIntegration(gradeHoldLambda));
-
     const route = grade.addResource('route');
     route.addMethod('POST', new apigateway.LambdaIntegration(gradeRouteLambda));
 
     // 📜 /history endpoint
     const history = api.root.addResource('history');
     const historyLambda = new awsLambda.Function(this, 'HistoryLambda', {
-      runtime: awsLambda.Runtime.NODEJS_18_X,              // ← Node.js runtime
-      handler: 'history_lambda.lambdaHandler',             // ← filename.methodName
-      code:    awsLambda.Code.fromAsset(path.join(__dirname, 'handlers')),
+      runtime: awsLambda.Runtime.NODEJS_18_X,
+      handler: 'history_lambda.lambdaHandler',
+      code: awsLambda.Code.fromAsset(path.join(__dirname, 'handlers')),
       environment: {
         IMAGE_BUCKET: historyBucket.bucketName,
         HISTORY_TABLE: historyTable.tableName,
       },
     });
-
-// Grant it read perms on bucket/table as before
-  historyBucket.grantRead(historyLambda);
-  historyTable .grantReadData(historyLambda);
+    historyBucket.grantRead(historyLambda);
+    historyTable.grantReadData(historyLambda);
     history.addMethod('GET', new apigateway.LambdaIntegration(historyLambda));
+
+    // /generate-upload-url endpoint for presigned S3 uploads
+    const generateUploadUrl = api.root.addResource('generate-upload-url');
+    generateUploadUrl.addMethod('POST', new apigateway.LambdaIntegration(generateUploadUrlLambda));
+
+    // /process endpoint for image grading by s3Key
+    const processResource = api.root.addResource('process');
+    processResource.addMethod('POST', new apigateway.LambdaIntegration(processImageLambda));
 
     // 🌍 CORS for all resources
     const mockIntegration = new apigateway.MockIntegration({
@@ -139,7 +169,7 @@ export class ClimbIQStack extends Stack {
       }]
     };
 
-    [user, users, contour, hold, route, history].forEach(res => {
+    [user, users, contour, hold, route, history, generateUploadUrl, processResource].forEach(res => {
       res.addMethod('OPTIONS', mockIntegration, corsOptions);
     });
   }

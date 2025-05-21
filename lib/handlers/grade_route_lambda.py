@@ -60,9 +60,12 @@ def assess_move_difficulty(dist, ang, t1, t2, height_diff, wall_angle):
 
 
 def lambda_handler(event, context=None):
+    print("==== grade_route_lambda invoked ====")
+    print("event:", event)
     try:
         # Parse input
         payload = json.loads(event['body']) if isinstance(event.get('body'), str) else event
+        print("payload:", payload)
         metadata   = payload.get('metadata', {})
         wall_angle = float(payload.get('wall_angle', DEFAULT_WALL_ANGLE))
         start_hold = payload.get('start_hold')
@@ -122,6 +125,9 @@ def lambda_handler(event, context=None):
         print("hold_diff:", hold_diff)
         print("move_diff:", move_diff)
         print("total:", total)
+        print("Received metadata:", metadata)
+        print("Start hold:", start_hold, "End hold:", end_hold)
+
 
         # 2) Write record to DynamoDB
         record = {
